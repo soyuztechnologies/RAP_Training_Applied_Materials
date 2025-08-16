@@ -1,0 +1,228 @@
+1. Extend the ABAP structure with fields for card code
+
+@EndUserText.label : 'Sales Order Dev Extension Gift Card'
+@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE
+extend type sdsalesdoc_incl_eew_ps with zlam_salesorder_append {
+
+  @Semantics.amount.currencyCode : 'zlam_salesorder_append.zz_giftcardcurrency_sdh'
+  zz_giftcardamount_sdh   : zlam_dte_giftcardamt;
+  zz_giftcardcurrency_sdh : abap.cuky;
+
+}
+
+2. Extend E_SalesDocumentBasic 
+
+extend view entity E_SalesDocumentBasic with 
+association[0..1] to I_Currency as _zz_giftcardcurrency_sdh
+on $projection.zz_giftcardcurrency_sdh = _zz_giftcardcurrency_sdh.Currency
+ {
+    @Semantics.amount.currencyCode: 'zz_giftcardcurrency_sdh'
+    Persistence.zz_giftcardamount_sdh as zz_giftcardamount_sdh,
+    @ObjectModel.foreignKey.association: '_zz_giftcardcurrency_sdh'
+    Persistence.zz_giftcardcurrency_sdh as zz_giftcardcurrency_sdh,
+    _zz_giftcardcurrency_sdh
+}
+
+
+3. Extend I_SalesOrderTP
+
+extend view entity I_SalesOrderTP with {
+    @Semantics.amount.currencyCode: 'zz_giftcardcurrency_sdh'
+    SalesOrder.zz_giftcardamount_sdh as zz_giftcardamount_sdh,
+    SalesOrder.zz_giftcardcurrency_sdh as zz_giftcardcurrency_sdh
+}
+
+
+4. Extend R_SalesOrderTP
+
+extend view entity R_SalesOrderTP with {
+    @Semantics.amount.currencyCode: 'zz_giftcardcurrency_sdh'
+    _Extension.zz_giftcardamount_sdh as zz_giftcardamount_sdh,
+    _Extension.zz_giftcardcurrency_sdh as zz_giftcardcurrency_sdh
+}
+
+5. Define abstract entity
+
+@EndUserText.label: 'Abstract Entity to be used in RAP for exchange of data'
+define abstract entity zlam_ASSIGNGIFTCARDTOSO
+{
+    @Consumption.valueHelpDefinition: [{ 
+        entity.name: 'zlam_GIFTCARD_VH',
+        entity.element: 'Giftcardnumber'
+     }]
+    Giftcardnumber: zlam_dte_giftcardnum;
+    
+}
+
+6. Extend C_SalesOrderManage
+
+@EndUserText.label: 'Extend the consumption CDS entity'
+extend view C_SalesOrderManage with zlam_CSALESORDMANAGE_EXT
+association[0..1] to I_Currency as _zz_giftcardcurrency_sdh
+on $projection.zz_giftcardcurrency_sdh = _zz_giftcardcurrency_sdh.Currency
+ {
+    @Semantics.amount.currencyCode: 'zz_giftcardcurrency_sdh'
+    @UI: {
+        fieldGroup: [{ qualifier: 'OrderData', importance: #HIGH,
+                        type: #FOR_ACTION,
+                        dataAction: 'zz_use_gift_card',
+                        label: 'Use Gift Card'
+         }]
+    }
+    @UI.lineItem: [{ position: 65, importance: #HIGH }]
+    SalesOrder.zz_giftcardamount_sdh as zz_giftcardamount_sdh,
+    @ObjectModel.foreignKey.association: '_zz_giftcardcurrency_sdh'
+    SalesOrder.zz_giftcardcurrency_sdh as zz_giftcardcurrency_sdh,
+    _zz_giftcardcurrency_sdh
+}
+
+
+7. Extend BDEF for SalesOrder
+
+extension implementation in class zbp_ats_r_salesordertp_ext unique;
+
+extend behavior for SalesOrder
+{
+    //if the sales order net value is above 10000 INR only then the button
+    //will be visible to the user, dynamic feature control
+    action ( authorization : update, features : instance ) zz_use_gift_card
+        parameter zlam_ASSIGNGIFTCARDTOSO
+        result [0..1] $self;
+    field(readonly) zz_giftcardamount_sdh, zz_giftcardcurrency_sdh;
+    side effects {
+        action zz_use_gift_card affects entity _Item, entity _PricingElement;
+    }
+}
+
+extend behavior for SalesOrderItem
+{
+}
+
+8. Implementing class
+
+CLASS lhc_salesorder DEFINITION INHERITING FROM cl_abap_behavior_handler.
+
+  PRIVATE SECTION.
+
+    METHODS get_instance_features FOR INSTANCE FEATURES
+      IMPORTING keys REQUEST requested_features FOR SalesOrder RESULT result.
+
+    METHODS zz_use_gift_card FOR MODIFY
+      IMPORTING keys FOR ACTION SalesOrder~zz_use_gift_card RESULT result.
+
+ENDCLASS.
+
+CLASS lhc_salesorder IMPLEMENTATION.
+
+  METHOD get_instance_features.
+
+    ""Step 1: Read the data of the sales order in interest using EML
+    READ ENTITIES OF R_SalesOrderTP IN LOCAL MODE
+    ENTITY SalesOrder
+    FIELDS ( TotalNetAmount )
+    WITH CORRESPONDING #( keys )
+    RESULT DATA(lt_result_salesorder).
+
+    ""Step 2: Check if the Sales order net value is < 5000, if yes then disable the button
+    result = VALUE #( FOR ls_salesorder in lt_result_salesorder (
+                                                    %tky = ls_salesorder-%tky
+                                                    %features-%action-zz_use_gift_card =
+                                                    COND #(
+                                                        WHEN ls_salesorder-TotalNetAmount < '5000'
+                                                            then if_abap_behv=>fc-o-disabled
+                                                            else if_abap_behv=>fc-o-enabled
+                                                     )
+
+     ) ).
+
+  ENDMETHOD.
+
+  METHOD zz_use_gift_card.
+
+    ""Step 1: We will read our custom db table of gift card to know
+    ""        the acual amount
+    select * from zlam_giftcard FOR ALL ENTRIES IN @keys
+        WHERE giftcardnumber = @keys-%param-Giftcardnumber
+        into table @data(lt_discount).
+
+    ""We need to EML to change the corresponding sales order at runtime
+    ""1. In your custom fields (gift amount,curr) of standard table
+    ""2. Pricing condition in sales order by applying DRV1 with fixed discount
+    LOOP AT keys REFERENCE INTO data(lr_key).
+        ""Here we know the actual amount which goes in discount from custom table
+        READ TABLE lt_discount INTO DATA(ls_discount)
+            WITH KEY giftcardnumber = lr_key->%param-Giftcardnumber.
+
+        ""Check f discount is actually there
+        CHECK ls_discount is not initial.
+
+        ""Now we apply EML to change sales order data
+        MODIFY ENTITIES OF R_SalesOrderTP IN LOCAL MODE
+            ENTITY SalesOrder
+                UPDATE SET FIELDS WITH VALUE #( (
+                    %tky = lr_key->%tky
+                    %data-zz_giftcardamount_sdh = ls_discount-amount_v
+                    %data-zz_giftcardcurrency_sdh = ls_discount-amount_c
+                    )
+                )
+                CREATE BY \_PricingElement SET FIELDS WITH VALUE #( (
+                    %tky = lr_key->%tky
+                    %target = VALUE #( (
+                            %cid = 'CIDGIFT'
+                            conditiontype = 'DRV1'
+                            conditionrateamount = ls_discount-amount_v * ( -1 )
+                            conditioncurrency = ls_discount-amount_c
+                        )
+                     ) )
+                 )
+                 FAILED data(ls_modify_failed)
+                 REPORTED data(ls_modify_reported).
+
+         failed = CORRESPONDING #( APPENDING BASE ( failed ) ls_modify_failed ).
+         reported = CORRESPONDING #( APPENDING BASE ( reported ) ls_modify_reported ).
+
+    ENDLOOP.
+
+    READ ENTITIES OF R_SALESORDERTP IN LOCAL MODE
+    ENTITY SalesOrder
+    ALL FIELDS WITH
+    CORRESPONDING #( keys )
+    RESULT DATA(lt_salesorder).
+
+    result = value #( FOR salesorder IN lt_salesorder (
+        %tky = salesorder-%tky
+        %param = CORRESPONDING #( salesorder )
+     ) ).
+
+  ENDMETHOD.
+
+ENDCLASS.
+
+CLASS lsc_R_SALESORDERTP DEFINITION INHERITING FROM cl_abap_behavior_saver.
+  PROTECTED SECTION.
+
+    METHODS cleanup_finalize REDEFINITION.
+
+
+ENDCLASS.
+
+CLASS lsc_R_SALESORDERTP IMPLEMENTATION.
+
+  METHOD cleanup_finalize.
+  ENDMETHOD.
+
+
+ENDCLASS.
+
+9. Consumption BDEF projection
+
+extension for projection implementation in class zbp_ats_c_salesorderman_ext unique;
+
+extend behavior for SalesOrder
+{
+ use action zz_use_gift_card;
+}
+
+extend behavior for SalesOrderItem
+{
+}

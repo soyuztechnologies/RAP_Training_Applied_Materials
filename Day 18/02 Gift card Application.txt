@@ -1,0 +1,272 @@
+1. Create data elements for Gift Card Number, Gift Card Description, Gift Card Amount
+
+ZATS_DTE_GIFTCARDNUM	Predefined	NUMC	10
+ZATS_DTE_GIFTCARDAMT	Predefined	CURR	15,2
+ZATS_DTE_GIFTCARDDESC	Predefined	CHAR	40
+
+2. DB table for gift card
+
+@EndUserText.label : 'Gift Card for sales order'
+@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE
+@AbapCatalog.tableCategory : #TRANSPARENT
+@AbapCatalog.deliveryClass : #A
+@AbapCatalog.dataMaintenance : #RESTRICTED
+define table zats_giftcard {
+
+  key client         : abap.clnt not null;
+  key sap_uuid       : sysuuid_x16 not null;
+  giftcardnumber     : zats_dte_giftcardnum not null;
+  sap_description    : zats_dte_giftcarddesc not null;
+  @Semantics.amount.currencyCode : 'zats_giftcard.amount_c'
+  amount_v           : zats_dte_giftcardamt not null;
+  amount_c           : abap.cuky;
+  local_last_changed : abp_locinst_lastchange_tstmpl;
+  last_changed       : abp_lastchange_tstmpl;
+
+}
+
+3. Value help CDS entity for integration
+
+@AbapCatalog.viewEnhancementCategory: [#NONE]
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'Value Help CDS entity'
+@Metadata.ignorePropagatedAnnotations: true
+@ObjectModel.usageType:{
+    serviceQuality: #X,
+    sizeCategory: #S,
+    dataClass: #MIXED
+}
+@ObjectModel.dataCategory: #VALUE_HELP
+@Search.searchable: true
+@ObjectModel.representativeKey: 'SapUuid'
+@Consumption.valueHelpDefault.fetchValues: #AUTOMATICALLY_WHEN_DISPLAYED
+@Consumption.ranked: true
+define view entity ZATS_GIFTCARD_VH as select from zats_giftcard as GiftCard
+{ 
+    @UI.hidden: true
+    key sap_uuid as SapUuid,
+    @ObjectModel.text.element: [ 'SapDescription' ]
+    giftcardnumber as Giftcardnumber,
+    @Search: {
+        defaultSearchElement: true,
+        ranking: #HIGH,
+        fuzzinessThreshold: 0.8
+    }
+    @Semantics.text: true
+    sap_description as SapDescription,
+    @Semantics.amount.currencyCode: 'AmountC'
+    amount_v as AmountV,
+    amount_c as AmountC
+}
+
+
+4. New CDS entity for root BO
+
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: '##GENERATED ZATS_GIFTCARD'
+define root view entity ZR_ATS_GIFTCARD
+  as select from zats_giftcard
+{
+  key sap_uuid as SapUUID,
+  giftcardnumber as Giftcardnumber,
+  sap_description as SapDescription,
+  @Semantics.amount.currencyCode: 'AmountC'
+  amount_v as AmountV,
+  amount_c as AmountC,
+  @Semantics.systemDateTime.localInstanceLastChangedAt: true
+  local_last_changed as LocalLastChanged,
+  @Semantics.systemDateTime.lastChangedAt: true
+  last_changed as LastChanged
+  
+}
+
+
+5. Create projection view
+
+@AccessControl.authorizationCheck: #CHECK
+@Metadata.allowExtensions: true
+@EndUserText.label: 'Projection View for ZR_ATS_GIFTCARD'
+define root view entity ZC_ATS_GIFTCARD
+  provider contract transactional_query
+  as projection on ZR_ATS_GIFTCARD
+{
+  key SapUUID,
+  Giftcardnumber,
+  SapDescription,
+  AmountV,
+  AmountC,
+  LocalLastChanged
+  
+}
+
+
+6. BDEF for Gift card
+
+managed implementation in class ZBP_R_ATS_GIFTCARD unique;
+strict ( 2 );
+with draft;
+
+define behavior for ZR_ATS_GIFTCARD
+persistent table zats_giftcard
+draft table ZATS_GIFTCARD_D
+etag master LocalLastChanged
+lock master total etag LastChanged
+authorization master( global )
+
+{
+  field ( readonly )
+   SapUUID,
+   LastChanged,
+   LocalLastChanged;
+
+  field ( numbering : managed )
+   SapUUID;
+
+
+  create;
+  update;
+  delete;
+
+  draft action Edit;
+  draft action Activate optimized;
+  draft action Discard;
+  draft action Resume;
+  draft determine action Prepare;
+
+  mapping for ZATS_GIFTCARD
+  {
+    SapUUID = sap_uuid;
+    Giftcardnumber = giftcardnumber;
+    SapDescription = sap_description;
+    AmountV = amount_v;
+    AmountC = amount_c;
+    LocalLastChanged = local_last_changed;
+    LastChanged = last_changed;
+  }
+}
+
+7. Implementing class (empty)
+
+CLASS LHC_ZR_ATS_GIFTCARD DEFINITION INHERITING FROM CL_ABAP_BEHAVIOR_HANDLER.
+  PRIVATE SECTION.
+    METHODS:
+      GET_GLOBAL_AUTHORIZATIONS FOR GLOBAL AUTHORIZATION
+        IMPORTING
+           REQUEST requested_authorizations FOR ZR_ATS_GIFTCARD
+        RESULT result.
+ENDCLASS.
+
+CLASS LHC_ZR_ATS_GIFTCARD IMPLEMENTATION.
+  METHOD GET_GLOBAL_AUTHORIZATIONS.
+  ENDMETHOD.
+ENDCLASS.
+
+8. BDEF projection layer
+
+projection;
+strict ( 2 );
+use draft;
+
+define behavior for ZC_ATS_GIFTCARD
+use etag
+
+{
+  use create;
+  use update;
+  use delete;
+
+  use action Edit;
+  use action Activate;
+  use action Discard;
+  use action Resume;
+  use action Prepare;
+}
+
+9. MDE for Gift card
+
+
+@Metadata.layer: #CORE
+@UI: {
+  headerInfo: {
+    typeName: 'Gift Card', 
+    typeNamePlural: 'Gift Cards',
+    title: { type: #STANDARD, value: 'Giftcardnumber' },
+    description: { type: #STANDARD, value: 'SapDescription' }
+  }
+}
+@Search.searchable: true
+annotate view ZC_ATS_GIFTCARD with
+{
+  @UI.facet: [ {
+    id: 'idIdentification', 
+    type: #IDENTIFICATION_REFERENCE, 
+    label: 'Gift Card', 
+    position: 10 
+  } ]
+  @UI.hidden: true
+  SapUUID;
+  @UI.selectionField: [{ position: 10 }]
+  @UI.lineItem: [ {
+    position: 10 , 
+    importance: #MEDIUM, 
+    label: ''
+  } ]
+  @UI.identification: [ {
+    position: 10 , 
+    label: ''
+  } ]
+  @Search.defaultSearchElement: true
+  @Consumption.valueHelpDefinition: [{ 
+    entity.name: 'ZATS_GIFTCARD_VH',
+    entity.element: 'Giftcardnumber'
+   }]
+  Giftcardnumber;
+  
+  @UI.lineItem: [ {
+    position: 20 , 
+    importance: #MEDIUM, 
+    label: ''
+  } ]
+  @UI.identification: [ {
+    position: 20 , 
+    label: ''
+  } ]
+  SapDescription;
+  
+  @UI.lineItem: [ {
+    position: 30 , 
+    importance: #MEDIUM, 
+    label: ''
+  } ]
+  @UI.identification: [ {
+    position: 30 , 
+    label: ''
+  } ]
+  AmountV;
+  
+  @UI.lineItem: [ {
+    position: 40 , 
+    importance: #MEDIUM, 
+    label: 'AmountC'
+  } ]
+  @UI.identification: [ {
+    position: 40 , 
+    label: 'AmountC'
+  } ]
+  @Consumption.valueHelpDefinition: [{ 
+    entity.name: 'I_CurrencyStdVH',
+    entity.element: 'Currency'
+   }]
+  AmountC;
+  
+  @UI.hidden: true
+  LocalLastChanged;
+}
+
+
+10. Service definition OData V4
+
+@EndUserText.label: 'Service definition for ZC_ATS_GIFTCARD'
+define service ZUI_ATS_GIFTCARD_O4 {
+  expose ZC_ATS_GIFTCARD;
+}
