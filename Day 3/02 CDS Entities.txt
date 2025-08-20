@@ -1,9 +1,11 @@
+1. Working with Basic CDS view (Obsolete Concept)
+
 @AbapCatalog.sqlViewName: 'ZATSXXCDSVIEW'
 @AbapCatalog.compiler.compareFilter: true
 @AbapCatalog.preserveKey: true
 @AccessControl.authorizationCheck: #NOT_REQUIRED
 @EndUserText.label: 'Old approach of CDS views'
-define view ZATS_XX_CDS_VIEW as select from zats_xx_bpa
+define view ZAP_AB_CDS_VIEW as select from zAP_AB_bpa
 {
     key bp_id as BpId,
     bp_role as BpRole,
@@ -16,6 +18,7 @@ define view ZATS_XX_CDS_VIEW as select from zats_xx_bpa
 
 
 
+2. Interface CDS entity on Business partner data
 
 
 @AbapCatalog.viewEnhancementCategory: [#NONE]
@@ -27,7 +30,7 @@ define view ZATS_XX_CDS_VIEW as select from zats_xx_bpa
     sizeCategory: #S,
     dataClass: #MIXED
 }
-define view entity ZI_ATS_XX_BPA as select from zats_xx_bpa
+define view entity ZI_AP_AB_BPA as select from zAP_AB_bpa
 association[1] to I_Country as _Country on
 $projection.CountryCode = _Country.Country
 {
@@ -44,7 +47,7 @@ $projection.CountryCode = _Country.Country
 
 
 
-
+3. Interface CDS entity on product data
 
 
 @AbapCatalog.viewEnhancementCategory: [#NONE]
@@ -56,7 +59,7 @@ $projection.CountryCode = _Country.Country
     sizeCategory: #S,
     dataClass: #MIXED
 }
-define view entity ZI_ATS_XX_PRODUCT as select from zats_xx_product
+define view entity ZI_AP_AB_PRODUCT as select from zAP_AB_product
 {
     key product_id as ProductId,
     name as Name,
@@ -67,6 +70,8 @@ define view entity ZI_ATS_XX_PRODUCT as select from zats_xx_product
     discount as Discount
 }
 
+ 
+4. Interface CDS entity on sales and items data (concept of association)
 
 @AbapCatalog.viewEnhancementCategory: [#NONE]
 @AccessControl.authorizationCheck: #NOT_REQUIRED
@@ -77,8 +82,8 @@ define view entity ZI_ATS_XX_PRODUCT as select from zats_xx_product
     sizeCategory: #S,
     dataClass: #MIXED
 }
-define view entity ZI_ATS_XX_SALES as select from zats_xx_so_hdr  as hdr
-association[1..*] to zats_xx_so_item as _Items on
+define view entity ZI_AP_AB_SALES as select from zAP_AB_so_hdr  as hdr
+association[1..*] to zAP_AB_so_item as _Items on
 $projection.OrderId = _Items.order_id
 {
     key hdr.order_id as OrderId,
@@ -90,6 +95,7 @@ $projection.OrderId = _Items.order_id
 }
 
 
+5. Composite CDS entity on Sales and Master data
 
 @AbapCatalog.viewEnhancementCategory: [#NONE]
 @AccessControl.authorizationCheck: #NOT_REQUIRED
@@ -101,32 +107,34 @@ $projection.OrderId = _Items.order_id
     dataClass: #MIXED
 }
 @Analytics.dataCategory: #CUBE
-define view entity ZI_ATS_XX_SALES_CUBE as select from ZI_ATS_XX_SALES
-association[1] to ZI_ATS_XX_BPA as _BusinessPartner on
+define view entity ZI_AP_AB_SALES_CUBE as select from ZI_AP_AB_SALES
+association[1] to ZI_AP_AB_BPA as _BusinessPartner on
 $projection.Buyer = _BusinessPartner.BpId
-association[1] to ZI_ATS_XX_PRODUCT as _Product on 
+association[1] to ZI_AP_AB_PRODUCT as _Product on 
 $projection.Product = _Product.ProductId
 {
-    key ZI_ATS_XX_SALES.OrderId,
-    key ZI_ATS_XX_SALES._Items.item_id as ItemId,
-    ZI_ATS_XX_SALES.OrderNo,
-    ZI_ATS_XX_SALES.Buyer,
-    ZI_ATS_XX_SALES.CreatedBy,
-    ZI_ATS_XX_SALES.CreatedOn,
+    key ZI_AP_AB_SALES.OrderId,
+    key ZI_AP_AB_SALES._Items.item_id as ItemId,
+    ZI_AP_AB_SALES.OrderNo,
+    ZI_AP_AB_SALES.Buyer,
+    ZI_AP_AB_SALES.CreatedBy,
+    ZI_AP_AB_SALES.CreatedOn,
     /* Associations */
-    ZI_ATS_XX_SALES._Items.product as Product,
+    ZI_AP_AB_SALES._Items.product as Product,
     @DefaultAggregation: #SUM
     @Semantics.amount.currencyCode: 'CurrencyCode'
-    ZI_ATS_XX_SALES._Items.amount as GrossAmount,
-    ZI_ATS_XX_SALES._Items.currency as CurrencyCode,
+    ZI_AP_AB_SALES._Items.amount as GrossAmount,
+    ZI_AP_AB_SALES._Items.currency as CurrencyCode,
     @DefaultAggregation: #SUM
     @Semantics.quantity.unitOfMeasure: 'UnitOfMeasure'
-    ZI_ATS_XX_SALES._Items.qty as Quantity,
-    ZI_ATS_XX_SALES._Items.uom as UnitOfMeasure,
+    ZI_AP_AB_SALES._Items.qty as Quantity,
+    ZI_AP_AB_SALES._Items.uom as UnitOfMeasure,
     _Product,
     _BusinessPartner
 }
 
+
+6. Working with Consumption view with Analytic Query
 
 @AbapCatalog.viewEnhancementCategory: [#NONE]
 @AccessControl.authorizationCheck: #NOT_REQUIRED
@@ -138,7 +146,7 @@ $projection.Product = _Product.ProductId
     dataClass: #MIXED
 }
 @Analytics.query: true
-define view entity ZC_ATS_XX_SALES_ANA as select from ZI_ATS_XX_SALES_CUBE
+define view entity ZC_AP_AB_SALES_ANA as select from ZI_AP_AB_SALES_CUBE
 {
     key _BusinessPartner.CompanyName,
     key _BusinessPartner.CountryName,
@@ -148,10 +156,4 @@ define view entity ZC_ATS_XX_SALES_ANA as select from ZI_ATS_XX_SALES_CUBE
     UnitOfMeasure
 }
 
-
-
-@EndUserText.label: 'Service definition for Sales order model'
-define service ZATS_XX_SO_SD {
-  expose ZC_ATS_XX_SALES_ANA as SalesSet;
-}
 

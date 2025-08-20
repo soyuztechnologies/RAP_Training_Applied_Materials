@@ -1,125 +1,5 @@
-1. Create 3 Data elements
-ZATS_XX_DTE_ID		CHAR32
-ZATS_XX_DTE_BPTYP	DOMAIN	CHAR2	01 CUSTOMER	02	SUPPLIER
-ZATS_XX_DTE_REGION	CHAR4
 
-2. Create a reusable structure
-
-@EndUserText.label : 'Administration Data'
-@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE
-define structure zats_xx_str_admin_data {
-
-  created_by : abap.char(16);
-  created_on : timestamp;
-  changed_by : abap.char(16);
-  changed_on : timestamp;
-
-}
-
-3. Create DB Tables as below
-
-@EndUserText.label : 'Region master data'
-@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE
-@AbapCatalog.tableCategory : #TRANSPARENT
-@AbapCatalog.deliveryClass : #A
-@AbapCatalog.dataMaintenance : #RESTRICTED
-define table zats_xx_region {
-
-  key client : abap.clnt not null;
-  key region : zats_xx_dte_region not null;
-  regionname : abap.char(16);
-
-}
-
-@EndUserText.label : 'Business partner Master data'
-@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE
-@AbapCatalog.tableCategory : #TRANSPARENT
-@AbapCatalog.deliveryClass : #A
-@AbapCatalog.dataMaintenance : #RESTRICTED
-define table zats_xx_bpa {
-
-  key client   : abap.clnt not null;
-  key bp_id    : zats_xx_dte_id not null;
-  bp_role      : zats_xx_dte_bptype;
-  @EndUserText.label : 'Company Name'
-  company_name : abap.string(256);
-  @EndUserText.label : 'Street'
-  street       : abap.string(256);
-  @EndUserText.label : 'Country'
-  country      : abap.string(256);
-  region       : zats_xx_dte_region;
-  @EndUserText.label : 'City'
-  city         : abap.char(100);
-
-}
-
-
-@EndUserText.label : 'Products master data'
-@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE
-@AbapCatalog.tableCategory : #TRANSPARENT
-@AbapCatalog.deliveryClass : #A
-@AbapCatalog.dataMaintenance : #RESTRICTED
-define table zats_xx_product {
-
-  key client     : abap.clnt not null;
-  key product_id : zats_xx_dte_id not null;
-  name           : abap.string(256);
-  category       : abap.char(40);
-  @Semantics.amount.currencyCode : 'zats_xx_product.currency'
-  price          : abap.curr(10,2);
-  currency       : abap.cuky;
-  discount       : abap.int4;
-
-}
-
-@EndUserText.label : 'Sales order header transaction'
-@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE
-@AbapCatalog.tableCategory : #TRANSPARENT
-@AbapCatalog.deliveryClass : #A
-@AbapCatalog.dataMaintenance : #RESTRICTED
-define table zats_xx_so_hdr {
-
-  key client    : abap.clnt not null;
-  key order_id  : zats_xx_dte_id not null;
-  order_no      : int4;
-  @AbapCatalog.foreignKey.screenCheck : true
-  buyer         : zats_xx_dte_id not null
-    with foreign key [0..*,1] zats_xx_bpa
-      where bp_id = zats_xx_so_hdr.buyer;
-  @Semantics.amount.currencyCode : 'zats_xx_so_hdr.currency_code'
-  gross_amount  : abap.curr(10,2);
-  currency_code : abap.cuky;
-  include zats_xx_str_admin_data;
-
-}
-
-@EndUserText.label : 'Sales order header transaction'
-@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE
-@AbapCatalog.tableCategory : #TRANSPARENT
-@AbapCatalog.deliveryClass : #A
-@AbapCatalog.dataMaintenance : #RESTRICTED
-define table zats_xx_so_item {
-
-  key client  : abap.clnt not null;
-  key item_id : zats_xx_dte_id not null;
-  order_id    : zats_xx_dte_id not null;
-  @AbapCatalog.foreignKey.screenCheck : true
-  product     : zats_xx_dte_id not null
-    with foreign key [0..*,1] zats_xx_product
-      where product_id = zats_xx_so_item.product;
-  @Semantics.amount.currencyCode : 'zats_xx_so_item.currency'
-  amount      : abap.curr(10,2);
-  currency    : abap.cuky;
-  @Semantics.quantity.unitOfMeasure : 'zats_xx_so_item.uom'
-  qty         : abap.quan(5,2);
-  uom         : abap.unit(3);
-  include zats_xx_str_admin_data;
-
-}
-
-4. Create data builder class to upload sample data
-
-CLASS zats_xx_data_builder DEFINITION
+CLASS zap_ab_data_builder DEFINITION
   PUBLIC
   FINAL
   CREATE PUBLIC .
@@ -136,7 +16,7 @@ ENDCLASS.
 
 
 
-CLASS zats_xx_data_builder IMPLEMENTATION.
+CLASS zap_ab_data_builder IMPLEMENTATION.
 
 
   METHOD if_oo_adt_classrun~main.
@@ -153,8 +33,8 @@ CLASS zats_xx_data_builder IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD fill_master_data.
-    data : lt_bp type table of zats_xx_bpa,
-           lt_prod type table of zats_xx_product.
+    data : lt_bp type table of zap_ab_bpa,
+           lt_prod type table of zap_ab_product.
 
     append value #(
                     bp_id = cl_uuid_factory=>create_system_uuid( )->create_uuid_c32( )
@@ -292,8 +172,8 @@ CLASS zats_xx_data_builder IMPLEMENTATION.
                     )
                     to lt_prod.
 
-     insert zats_xx_bpa from table @lt_bp.
-     insert zats_xx_product from table @lt_prod.
+     insert zap_ab_bpa from table @lt_bp.
+     insert zap_ab_product from table @lt_prod.
   ENDMETHOD.
 
   METHOD fill_transaction_data.
@@ -301,9 +181,9 @@ CLASS zats_xx_data_builder IMPLEMENTATION.
            n type i,
            seed type i,
            lv_date type timestamp,
-           lv_ord_id type zats_xx_dte_id,
-           lt_so type table of zats_xx_so_hdr,
-           lt_so_i type table of zats_xx_so_item.
+           lv_ord_id type zap_ab_dte_id,
+           lt_so type table of zap_ab_so_hdr,
+           lt_so_i type table of zap_ab_so_item.
 
     seed = cl_abap_random=>seed( ).
     cl_abap_random_int=>create(
@@ -316,8 +196,8 @@ CLASS zats_xx_data_builder IMPLEMENTATION.
     ).
     get time stamp FIELD lv_date.
 
-    select * from zats_xx_bpa into table @data(lt_bpa).
-    select * from zats_xx_product into table @data(lt_prod).
+    select * from zap_ab_bpa into table @data(lt_bpa).
+    select * from zap_ab_product into table @data(lt_prod).
 
     do 50 times.
         lv_ord_id = cl_uuid_factory=>create_system_uuid( )->create_uuid_c32(  ).
@@ -349,13 +229,13 @@ CLASS zats_xx_data_builder IMPLEMENTATION.
         enddo.
     enddo.
 
-    insert zats_xx_so_hdr from table @lt_so.
-    insert zats_xx_so_item from table @lt_so_i.
+    insert zap_ab_so_hdr from table @lt_so.
+    insert zap_ab_so_item from table @lt_so_i.
 
   ENDMETHOD.
 
   METHOD flush.
-    delete from : zats_xx_bpa, zats_xx_product, zats_xx_so_hdr, zats_xx_so_item.
+    delete from : zap_ab_bpa, zap_ab_product, zap_ab_so_hdr, zap_ab_so_item.
   ENDMETHOD.
 
 ENDCLASS.
